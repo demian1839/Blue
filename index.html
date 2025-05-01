@@ -5,62 +5,92 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Swipe and Use</title>
   <style>
-    body {
+    html, body {
       margin: 0;
-      font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(to top, #202020, #404040);
+      padding: 0;
+      overflow: hidden;
+      background: linear-gradient(to top, #1e1e1e, #3a3a3a);
+      font-family: sans-serif;
       color: white;
-      text-align: center;
+      height: 100vh;
+      touch-action: none;
+    }
+
+    .app {
       display: flex;
       flex-direction: column;
-      height: 100vh;
-      justify-content: center;
       align-items: center;
+      justify-content: center;
+      height: 100vh;
       padding: 20px;
+      box-sizing: border-box;
+      text-align: center;
     }
-    h1 {
-      margin-bottom: 20px;
+
+    input, button {
+      margin: 10px;
+      padding: 10px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
     }
-    #fileInput {
-      margin: 20px 0;
-    }
+
     #swipeZone {
-      margin-top: 20px;
-      padding: 60px;
-      background-color: #303030;
+      background: #303030;
       border-radius: 12px;
-      font-size: 18px;
-      user-select: none;
-      max-width: 300px;
-    }
-    #status {
+      padding: 40px;
       margin-top: 20px;
-      font-size: 16px;
+      font-size: 18px;
+      max-width: 90%;
+      user-select: none;
     }
+
+    #preview {
+      margin-top: 20px;
+      transition: transform 1s ease, opacity 1s ease;
+    }
+
+    .fly-up {
+      transform: translateY(-200vh);
+      opacity: 0;
+    }
+
+    .fly-in {
+      transform: translateY(-200vh);
+      animation: dropIn 1s ease forwards;
+    }
+
+    @keyframes dropIn {
+      0% { transform: translateY(-200vh); opacity: 0; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+
     #downloadZone {
-      margin-top: 30px;
+      margin-top: 40px;
     }
-    button {
-      padding: 10px 20px;
-      font-size: 16px;
+
+    #status {
       margin-top: 10px;
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
-  <h1>Swipe and Use</h1>
-  <input type="file" id="fileInput" />
-  <div id="swipeZone">↑ Hochwischen zum Senden</div>
-  <div id="status">Bereit...</div>
-  <div id="downloadZone"></div>
+  <div class="app">
+    <h2>Swipe and Use</h2>
+    <input type="text" id="roomCode" placeholder="Raumcode (z. B. 1234)" />
+    <input type="file" id="fileInput" />
+    <div id="preview"></div>
+    <div id="swipeZone">↑ Hochwischen zum Senden</div>
+    <div id="status">Bereit</div>
+    <div id="downloadZone"></div>
+    <audio id="ding" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"></audio>
+  </div>
 
-  <!-- Firebase & App Script -->
   <script type="module">
-    // Firebase importieren
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-    // Dein Firebase-Config
     const firebaseConfig = {
       apiKey: "AIzaSyD4GkHuMEBD4sqYkMj0etF1BZWi1LJy0h4",
       authDomain: "bluetooth-8693f.firebaseapp.com",
@@ -79,13 +109,26 @@
     const swipeZone = document.getElementById("swipeZone");
     const status = document.getElementById("status");
     const downloadZone = document.getElementById("downloadZone");
+    const preview = document.getElementById("preview");
+    const roomCodeInput = document.getElementById("roomCode");
+    const ding = document.getElementById("ding");
 
     let selectedFile = null;
     let touchStartY = 0;
 
     fileInput.addEventListener("change", (e) => {
       selectedFile = e.target.files[0];
-      status.textContent = `Datei gewählt: ${selectedFile.name}`;
+      preview.innerHTML = "";
+      if (selectedFile.type.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(selectedFile);
+        img.style.maxWidth = "200px";
+        img.style.borderRadius = "10px";
+        preview.appendChild(img);
+      } else {
+        preview.innerHTML = `<p>${selectedFile.name}</p>`;
+      }
+      status.textContent = "Datei bereit – hochwischen zum Senden";
     });
 
     swipeZone.addEventListener("touchstart", (e) => {
@@ -94,7 +137,7 @@
 
     swipeZone.addEventListener("touchend", (e) => {
       const touchEndY = e.changedTouches[0].clientY;
-      if (touchStartY - touchEndY > 100 && selectedFile) {
+      if (touchStartY - touchEndY > 100 && selectedFile && roomCodeInput.value.trim() !== "") {
         sendFile();
       }
     });
@@ -106,26 +149,56 @@
         const fileData = {
           name: selectedFile.name,
           content: base64,
+          type: selectedFile.type,
           timestamp: Date.now()
         };
-        set(ref(db, 'sharedFile'), fileData);
+        const room = roomCodeInput.value.trim();
+        set(ref(db, `rooms/${room}/file`), fileData);
+        if (preview.firstChild) {
+          preview.firstChild.classList.add("fly-up");
+        }
         status.textContent = "Datei gesendet!";
       };
       reader.readAsDataURL(selectedFile);
     }
 
-    onValue(ref(db, 'sharedFile'), (snapshot) => {
-      const file = snapshot.val();
-      if (file) {
-        downloadZone.innerHTML = `
-          <p>Datei empfangen: ${file.name}</p>
-          <a href="${file.content}" download="${file.name}">
-            <button>Herunterladen</button>
-          </a>
-        `;
-        status.textContent = "Neue Datei empfangen!";
+    roomCodeInput.addEventListener("input", () => {
+      const room = roomCodeInput.value.trim();
+      if (room.length > 0) {
+        onValue(ref(db, `rooms/${room}/file`), (snapshot) => {
+          const file = snapshot.val();
+          if (file) {
+            showReceivedFile(file);
+          }
+        });
       }
     });
+
+    function showReceivedFile(file) {
+      downloadZone.innerHTML = "";
+      const wrapper = document.createElement("div");
+      wrapper.classList.add("fly-in");
+
+      if (file.type.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = file.content;
+        img.style.maxWidth = "200px";
+        img.style.borderRadius = "10px";
+        wrapper.appendChild(img);
+      }
+
+      const link = document.createElement("a");
+      link.href = file.content;
+      link.download = file.name;
+      link.innerHTML = `<button>⬇ ${file.name}</button>`;
+      wrapper.appendChild(link);
+
+      downloadZone.appendChild(wrapper);
+      status.textContent = "Datei empfangen!";
+
+      if (navigator.vibrate) navigator.vibrate(200);
+      ding.play().catch(() => {});
+    }
   </script>
 </body>
 </html>
